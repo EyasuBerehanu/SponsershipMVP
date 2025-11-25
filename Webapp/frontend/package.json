@@ -2,6 +2,7 @@
   "name": "rag-chat-frontend",
   "version": "0.1.0",
   "private": true,
+  "proxy": "http://localhost:5001",
   "dependencies": {
     "jspdf": "^3.0.3",
     "react": "^18.2.0",

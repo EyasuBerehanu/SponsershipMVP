@@ -54,7 +54,8 @@ DROPBOX_FOLDER = "/L’mu-Oa (Sports Sponsorship AI Project)"  # Dropbox folder 
 # 3. ChromaDB Setup (Persistent)
 # =========================================
 # Use absolute path for external storage (hidden folder in user's home dir)
-CHROMA_DB_PATH = os.path.expanduser("~/.chroma_db_data")
+# Use environment variable for ChromaDB path (Render Persistent Disk) or default to local
+CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", os.path.expanduser("~/.chroma_db_data"))
 if not os.path.exists(CHROMA_DB_PATH):
     os.makedirs(CHROMA_DB_PATH)
 
@@ -83,15 +84,30 @@ except:
 # =========================================
 # 4. Flask Setup
 # =========================================
-app = Flask(__name__)
+# =========================================
+# 4. Flask Setup
+# =========================================
+# Point to the React build folder
+app = Flask(__name__, static_folder='../../Webapp/frontend/build', static_url_path='/')
+CORS(app)
 CORS(app)
 
+# Configure upload folder
 # Configure upload folder
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Serve React Static Files
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(app.static_folder + '/' + path):
+        return app.send_static_file(path)
+    else:
+        return app.send_static_file('index.html')
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg'}
 
 def allowed_file(filename):
@@ -626,6 +642,9 @@ if __name__ == "__main__":
     else:
         processing_status["is_ready"] = True
         print("Skipping Dropbox indexing — using existing ChromaDB data only.")
-
+    """
     print("\n Flask server running at http://localhost:5001")
-    app.run(debug=True, port=5001, use_reloader=False)
+    # Run the app
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    """

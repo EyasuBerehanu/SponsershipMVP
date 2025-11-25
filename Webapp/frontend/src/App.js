@@ -13,7 +13,7 @@ function App() {
     // Poll for status until documents are ready
     const checkStatus = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/status');
+        const response = await fetch('/api/status');
         const data = await response.json();
 
         if (data.processed) {

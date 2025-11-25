@@ -30,7 +30,7 @@ const FileUpload = ({ onFilesProcessed, onError, loading, setLoading }) => {
     });
 
     try {
-      const response = await fetch('http://localhost:5001/api/upload', {
+      const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData
       });
@@ -73,7 +73,7 @@ const FileUpload = ({ onFilesProcessed, onError, loading, setLoading }) => {
 
   return (
     <div className="file-upload-container">
-      <div 
+      <div
         className="drop-zone"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
