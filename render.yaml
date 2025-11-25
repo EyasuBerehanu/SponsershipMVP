@@ -5,13 +5,15 @@ services:
     plan: free
     buildCommand: "./build.sh"
     startCommand: "gunicorn Project.Parse.databaseAccess:app"
-    disk:
-      name: chroma-data
-      mountPath: /var/lib/chroma
-      sizeGB: 1
+    #disk:
+    #  name: chroma-data
+    #  mountPath: /var/lib/chroma
+    #  sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: PYTHONPATH
+        value: ./Project/Parse
       - key: CHROMA_DB_PATH
         value: /var/lib/chroma
       - key: OPENROUTER_API_KEY

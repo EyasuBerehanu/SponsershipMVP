@@ -11,4 +11,4 @@ cd ../..
 
 # Install Backend Dependencies
 echo "Installing Backend Dependencies..."
-pip install -r Project/requirments.txt
+pip install -r Project/requirements.txt
