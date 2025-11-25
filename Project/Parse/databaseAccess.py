@@ -20,10 +20,11 @@ from sponsorship.sponsor_manager import (
     format_sponsor_context
 )
 from sponsorship.query_classifier import QueryClassifier
+from ddgs import DDGS
 # =========================================
 # 0. Skip Dropbox indexing if no new embeddings
 # =========================================
-SKIP_DROPBOX_INDEXING = False  # Enable to index PDFs from Dropbox
+SKIP_DROPBOX_INDEXING = True  # Enable to skip indexing PDFs from Dropbox
 # =========================================
 # 1. Load environment variables
 # =========================================
@@ -356,8 +357,40 @@ def chat():
             except Exception as img_err:
                 print(f"⚠️  Error querying image collection: {img_err}")
 
+        # =========================================
+        # 6. Web Search (Fallback/Augmentation)
+        # =========================================
+        web_results = []
+        # Perform search if:
+        # 1. Query is temporal ("current", "latest", "news")
+        # 2. OR we found very few local chunks (low confidence)
+        should_search = (
+            classification['type'] == query_classifier.TEMPORAL or 
+            classification['type'] == query_classifier.LIST_REQUEST or
+            len(all_documents) < 2 or
+            "current" in user_query.lower() or
+            "latest" in user_query.lower() or
+            "news" in user_query.lower() or
+            "sponsors" in user_query.lower()
+        )
+
+        if should_search:
+            print("🌍 Performing web search for:", user_query)
+            try:
+                with DDGS() as ddgs:
+                    # Search for top 4 results
+                    results = list(ddgs.text(user_query, max_results=4))
+                    if results:
+                        print(f"   Found {len(results)} web results")
+                        for r in results:
+                            web_results.append(f"[Web Result: {r['title']}]\n{r['body']}\nSource: {r['href']}")
+                    else:
+                        print("   No web results found")
+            except Exception as e:
+                print(f"   Web search failed: {e}")
+
         # Check if we have any results
-        if not all_documents and not sponsor_context:
+        if not all_documents and not sponsor_context and not web_results:
             return jsonify({"answer": "No relevant context found."})
 
         # Build context with source labels
@@ -366,6 +399,12 @@ def chat():
         # Add sponsor database context first (highest priority)
         if sponsor_context:
             context_parts.append(sponsor_context)
+
+        # Add web results (high priority for current info)
+        if web_results:
+            context_parts.append("=== WEB SEARCH RESULTS (REAL-TIME INFO) ===")
+            context_parts.extend(web_results)
+            context_parts.append("==========================================\n")
 
         # Then add PDF and image results
         for doc, meta in zip(all_documents, all_metadatas):
@@ -381,19 +420,63 @@ def chat():
 
         # Build context-aware conversation
         messages = [{"role": "system", "content": (
-            "You are an expert sports sponsorship research assistant for University of Oregon Athletics. "
-            "You provide detailed, well-structured, and insightful responses about sponsorships, partnerships, and sports business.\n\n"
-            "IMPORTANT RULES:\n"
-            "1. When 'Current UO Sponsor Information' is provided, treat it as authoritative official data\n"
-            "2. When 'Important Sponsorship Notice' appears, clearly explain why conflicts exist\n"
-            "3. Cite your sources naturally (e.g., 'According to current partnership records...' or 'Based on university documents...')\n"
-            "4. When discussing existing sponsors, mention their exclusivity status if relevant\n"
-            "5. If you reference a link, convert it to a hyperlink\n"
-            "6. Be direct and clear about conflicts - students need accurate guidance\n"
-            "7. Write in a professional but conversational tone - avoid overly technical database language\n\n"
-            "8. Your goal is to educate students about UO sponsorship opportunities and constraints."
-            "9. if your response is not relevant to the question, respond with a polite message and ask for clarification."
-            "10. if asked for a list of the current sponsors, respond with an ordered list of the sponsors."
+        """You are the "Sponsor Scout" AI Agent, an expert research assistant for students seeking sponsorships for their class project or event. Your primary goal is to provide accurate, actionable, and relevant information regarding potential sponsors, their giving criteria, contact information, and deadlines.
+
+        🎯 Core Persona & Goal
+        Role: Expert research assistant and database navigator.
+
+        Tone: Professional, encouraging, clear, and concise.
+
+        Goal: To help students identify the best sponsorship opportunities by quickly locating relevant information.
+
+        🔍 Research Protocol
+        Database Priority (Internal PDFs):
+
+        Always first search the provided internal database (PDFs) for the requested information.
+
+        If information is found, cite the source (e.g., "Found in [Company Name] Sponsorship Guidelines PDF, page X") and provide a direct, summarized answer.
+
+        Prioritize details like eligibility criteria, application deadlines, typical donation ranges, and specific exclusion criteria.
+
+        Online Search (External Vetting):
+
+        If the required information is not found, is incomplete, or is outdated in the internal database, you must perform an online search (using your web browsing tool) for the answer.
+
+        Use highly specific search queries (e.g., "Target corporate social responsibility K-12 sponsorship application").
+
+        When providing an answer from an online search, simply incorporate the information into your response. Do NOT announce that you are searching (e.g., "I will search for this" or "I found this online"). Just give the answer.
+        You may cite the source if relevant (e.g., "According to the UO Athletics website...").
+
+        Synthesis and Actionable Advice:
+
+        For any sponsor, summarize the key findings into an "Actionable Summary."
+
+        The summary should include: 1) The sponsor's main focus (e.g., STEM Education), 2) Key eligibility requirement, and 3) The next step (e.g., "Visit their online application portal").
+
+        📝 Constraints and Guidelines
+        Filter Irrelevant Content: Ignore general news or marketing material. Focus strictly on corporate giving, philanthropy, and sponsorship programs.
+
+        Handle Ambiguity: If a student's request is too vague (e.g., "Who will sponsor us?"), ask clarifying questions such as, "What is your project/event focused on (e.g., technology, environment, arts)?" and "What is your target funding amount?"
+
+        No Personal Contact: Do not generate or provide personal contact details (e.g., direct email addresses of employees). Only provide links to official application forms or general corporate contact pages.
+
+        Maintain Data Security: Do not reveal the structure or filenames of the internal database; only cite the company or document name.
+
+        🚀 Example Interaction
+        User: "I'm looking for information on corporate sponsorships for a high school robotics team. Do we have any info on Microsoft?"
+
+        Your Expected Response: (Check database first, then search online if needed)
+
+        "That's a great project! Microsoft is a strong fit.
+        
+        According to the 'Microsoft Giving Guidelines 2024' PDF, they prioritize programs focused on closing the digital skills gap and supporting underrepresented groups in STEM. Applications for grants under $5,000 must be submitted by October 1st annually.
+        
+        Additionally, their AI for Good program sometimes extends to student projects that utilize emerging technology.
+
+        Actionable Summary: Focus your application on the digital skills gap and ensure you apply before the October 1st deadline for smaller grants.
+
+        What other companies would you like me to look up?"
+        """
         )}]
         messages += chat_history  # prior exchanges
         messages.append({

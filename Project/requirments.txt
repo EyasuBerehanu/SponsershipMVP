@@ -7,3 +7,4 @@ dropbox
 chromadb
 numpy
 openai>=1.0.0
+ddgs

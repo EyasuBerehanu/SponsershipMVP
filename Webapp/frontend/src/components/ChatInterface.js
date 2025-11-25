@@ -162,10 +162,10 @@ const ChatInterface = () => {
           >
             <div className="message-content">
               {message.role === 'assistant' && (
-                <div className="message-avatar">🏆</div>
+                <div className="message-avatar">Agent</div>
               )}
               {message.role === 'user' && (
-                <div className="message-avatar">👤</div>
+                <div className="message-avatar">User</div>
               )}
               <div className="message-text">
                 {message.content.split('\n').map((line, i) => (
@@ -184,7 +184,7 @@ const ChatInterface = () => {
         {isLoading && (
           <div className="message assistant">
             <div className="message-content">
-              <div className="message-avatar">🏆</div>
+              <div className="message-avatar">Agent</div>
               <div className="message-text loading">
                 <span className="typing-indicator">
                   <span></span>
