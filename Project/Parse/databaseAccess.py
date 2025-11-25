@@ -13,6 +13,11 @@ import threading
 import re
 from werkzeug.utils import secure_filename
 import shutil
+import sys
+
+# Add current directory to path so we can import local modules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from sponsorship.sponsor_manager import (
     check_sponsor_conflict,
     get_sponsor_info,
@@ -642,9 +647,9 @@ if __name__ == "__main__":
     else:
         processing_status["is_ready"] = True
         print("Skipping Dropbox indexing — using existing ChromaDB data only.")
-    """
+        
     print("\n Flask server running at http://localhost:5001")
     # Run the app
     port = int(os.environ.get("PORT", 5001))
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-    """
+    
