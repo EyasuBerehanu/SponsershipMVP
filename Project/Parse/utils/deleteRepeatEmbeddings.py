@@ -1,6 +1,7 @@
 import chromadb
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+import os
 
 # --- CONFIG ---
 PERSIST_DIR = "./chroma_db"
@@ -8,7 +9,8 @@ COLLECTION_NAME = "pdf_embeddings"  # change this to your collection name
 SIMILARITY_THRESHOLD = 0.9999   # 1.0 = identical; use 0.9999 for near-duplicates
 
 # --- CONNECT TO CHROMA ---
-client = chromadb.PersistentClient(path=PERSIST_DIR)
+CHROMA_DB_PATH = os.path.expanduser("~/.chroma_db_data")
+client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
 collection = client.get_collection(COLLECTION_NAME)
 
 # --- FETCH ALL DATA ---
