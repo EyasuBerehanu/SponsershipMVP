@@ -15,6 +15,14 @@ from werkzeug.utils import secure_filename
 import shutil
 import sys
 
+# =========================================
+# 1. Load environment variables (MUST BE FIRST)
+# =========================================
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(env_path)
+if not env_path: 
+    raise ValueError("no env path")
+
 # Add current directory to path so we can import local modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,18 +33,23 @@ from sponsorship.sponsor_manager import (
     format_sponsor_context
 )
 from sponsorship.query_classifier import QueryClassifier
-import google.generativeai as genai
+
+from google import genai
+from google.genai import types
+
+# Initialize Gemini Client Globally
+if os.getenv("GOOGLE_API_KEY"):
+    gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    grounding_tool = types.Tool(
+        google_search=types.GoogleSearch()
+    )
+else:
+    gemini_client = None
+    grounding_tool = None
 # =========================================
 # 0. Skip Dropbox indexing if no new embeddings
 # =========================================
 SKIP_DROPBOX_INDEXING = os.getenv("SKIP_DROPBOX_INDEXING", "True").lower() == "true"  # Default to True to prevent auto-indexing on startup
-# =========================================
-# 1. Load environment variables
-# =========================================
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(env_path)
-if not env_path: 
-    raise ValueError("no env path")
 
 DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -44,9 +57,7 @@ SITE_URL = os.getenv("OPENROUTER_SITE_URL", "")
 SITE_TITLE = os.getenv("OPENROUTER_SITE_TITLE", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Configure Gemini
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
+
 
 if not DROPBOX_ACCESS_TOKEN:
     raise ValueError("Missing required DropBox access token in .env")
@@ -523,16 +534,9 @@ def chat():
             return jsonify({"error": data["error"]["message"]}), 500
         """
         # Use Gemini for response generation with Google Search enabled
-        # Using the newer google-genai library as requested
-        from google import genai
-        from google.genai import types
-        
-        client = genai.Client(api_key=GOOGLE_API_KEY)
-        
-        grounding_tool = types.Tool(
-            google_search=types.GoogleSearch()
-        )
-        
+        if not gemini_client:
+             return jsonify({"error": "Gemini API key not configured"}), 500
+
         config = types.GenerateContentConfig(
             tools=[grounding_tool]
         )
@@ -547,11 +551,17 @@ def chat():
             
         full_prompt += f"\nContext:\n{context}\n\nUser Question: {user_query}"
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=full_prompt,
-            config=config
-        )
+        print("DEBUG: Sending request to Gemini...")
+        try:
+            response = gemini_client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=full_prompt,
+                config=config
+            )
+            print("DEBUG: Gemini response received.")
+        except Exception as e:
+            print(f"ERROR: Gemini generation failed: {e}")
+            raise e
         
         if response.text:
             return jsonify({"answer": response.text})
