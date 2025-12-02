@@ -116,27 +116,7 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Serve React Static Files
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve(path):
-    try:
-        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-            return app.send_static_file(path)
-        else:
-            index_path = os.path.join(app.static_folder, 'index.html')
-            if os.path.exists(index_path):
-                return app.send_static_file('index.html')
-            else:
-                # Fallback if build folder doesn't exist
-                return jsonify({
-                    "error": "Frontend not built",
-                    "static_folder": app.static_folder,
-                    "index_exists": os.path.exists(index_path),
-                    "message": "The React frontend build folder was not found. Please check build.sh ran successfully."
-                }), 404
-    except Exception as e:
-        return jsonify({"error": str(e), "static_folder": app.static_folder}), 500
+
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg'}
 
 def allowed_file(filename):
@@ -698,7 +678,31 @@ def trigger_reindex():
     thread.start()
     return jsonify({"message": "Started background indexing process"})
 # =========================================
-# 10. Startup
+# 10. Serve Frontend (Catch-All)
+# =========================================
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path.startswith('api/'):
+        return jsonify({"error": "API endpoint not found"}), 404
+        
+    try:
+        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+            return app.send_static_file(path)
+        else:
+            index_path = os.path.join(app.static_folder, 'index.html')
+            if os.path.exists(index_path):
+                return app.send_static_file('index.html')
+            else:
+                return jsonify({
+                    "error": "Frontend not built",
+                    "message": "The React frontend build folder was not found."
+                }), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# =========================================
+# 11. Startup
 # =========================================
 if __name__ == "__main__":
     if not SKIP_DROPBOX_INDEXING:
