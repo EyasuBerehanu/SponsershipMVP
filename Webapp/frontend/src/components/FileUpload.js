@@ -113,7 +113,7 @@ const FileUpload = ({ onFilesProcessed, onError, loading, setLoading }) => {
                   onClick={() => handleRemoveFile(index)}
                   disabled={processing}
                 >
-                  ✕
+                  ×
                 </button>
               </div>
             ))}

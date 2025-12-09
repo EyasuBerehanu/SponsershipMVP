@@ -2,12 +2,27 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import ChatInterface from './components/ChatInterface';
 import FileUpload from './components/FileUpload';
+import AdminDashboard from './components/AdminDashboard';
+import AdminLogin from './components/AdminLogin';
+import ChatbotLogin from './components/ChatbotLogin';
 
 function App() {
   const [isReady, setIsReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(true);
   const [error, setError] = useState(null);
-  const [currentView, setCurrentView] = useState('chat'); // 'chat' or 'upload'
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState(null);
+
+  // Load authentication state from localStorage on mount
+  useEffect(() => {
+    const storedEmail = localStorage.getItem('userEmail');
+    if (storedEmail) {
+      setIsAuthenticated(true);
+      setUserEmail(storedEmail);
+    }
+  }, []);
 
   useEffect(() => {
     // Poll for status until documents are ready
@@ -37,26 +52,86 @@ function App() {
     checkStatus();
   }, []);
 
+  // Handle chatbot authentication
+  const handleChatbotLogin = (email) => {
+    setIsAuthenticated(true);
+    setUserEmail(email);
+    localStorage.setItem('userEmail', email);
+  };
+
+  // Handle sign out
+  const handleSignOut = () => {
+    setIsAuthenticated(false);
+    setUserEmail(null);
+    setShowAdmin(false);
+    localStorage.removeItem('userEmail');
+  };
+
+  // Handle admin dashboard
+  if (showAdmin) {
+    return <AdminDashboard onBack={() => setShowAdmin(false)} onSignOut={handleSignOut} />;
+  }
+
+  // Handle admin button click - check if user is already admin
+  const handleAdminClick = async () => {
+    if (!userEmail) {
+      setShowAdminLogin(true);
+      return;
+    }
+
+    // Check if the logged-in user is an admin
+    try {
+      const response = await fetch('/api/admin/verify-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: userEmail }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.authorized) {
+        // User is admin - grant access directly
+        setShowAdmin(true);
+      } else {
+        // User is not admin - show error message
+        alert('Access Denied\n\nYou do not have permission to access the admin dashboard. Please contact an administrator if you need admin access.');
+      }
+    } catch (error) {
+      console.error('Admin check error:', error);
+      alert('Error checking admin access. Please try again.');
+    }
+  };
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return <ChatbotLogin onLoginSuccess={handleChatbotLogin} />;
+  }
+
   return (
     <div className="App">
       <header className="App-header">
         <h1>L'mu-Oa: AI Sponsorship Assistant</h1>
         <p>Discover. Analyze. Propose. All with L'mu-Oa</p>
-        <div className="nav-buttons">
-          <button
-            className={`nav-button ${currentView === 'chat' ? 'active' : ''}`}
-            onClick={() => setCurrentView('chat')}
-          >
-            Chat
-          </button>
-          <button
-            className={`nav-button ${currentView === 'upload' ? 'active' : ''}`}
-            onClick={() => setCurrentView('upload')}
-          >
-            Upload Documents
-          </button>
+        <button className="admin-button" onClick={handleAdminClick}>Admin</button>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+            {userEmail}
+          </span>
         </div>
+        <button className="signout-button-main" onClick={handleSignOut}>Sign Out</button>
       </header>
+
+      {showAdminLogin && (
+        <AdminLogin
+          onLoginSuccess={() => {
+            setShowAdminLogin(false);
+            setShowAdmin(true);
+          }}
+          onCancel={() => setShowAdminLogin(false)}
+        />
+      )}
 
       <main className="App-main">
         {isProcessing ? (
@@ -66,19 +141,7 @@ function App() {
             <p>Loading PDFs and images from Dropbox. This may take a minute.</p>
           </div>
         ) : isReady ? (
-          currentView === 'chat' ? (
-            <ChatInterface />
-          ) : (
-            <FileUpload
-              onFilesProcessed={() => {
-                // Optional: switch back to chat or show success
-                alert('Files processed successfully!');
-              }}
-              onError={(msg) => setError(msg)}
-              loading={isProcessing}
-              setLoading={setIsProcessing}
-            />
-          )
+          <ChatInterface />
         ) : (
           <div className="error-container">
             <h2>Error</h2>

@@ -5,9 +5,12 @@
 }
 
 .App-header {
-  background-color: #282c34;
+  background: linear-gradient(135deg, #1a4d2e 0%, #4d7c0f 100%);
   padding: 20px;
   color: white;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  position: relative;
 }
 
 .nav-buttons {
@@ -33,9 +36,9 @@
 }
 
 .nav-button.active {
-  background: #61dafb;
-  color: #282c34;
-  border-color: #61dafb;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a4d2e;
+  border-color: rgba(255, 255, 255, 0.95);
   font-weight: bold;
 }
 
@@ -49,6 +52,44 @@
   font-size: 0.95rem;
   opacity: 0.9;
   margin: 0;
+}
+
+.admin-button {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 8px 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.admin-button:hover {
+  opacity: 0.8;
+}
+
+.signout-button-main {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 8px 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.signout-button-main:hover {
+  opacity: 0.8;
 }
 
 .App-main {

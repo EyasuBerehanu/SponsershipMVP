@@ -602,69 +602,191 @@ def list_sponsors():
         return jsonify({"error": str(e)}), 500
 
 """
-@app.route("/api/upload", methods=["POST"])
+@app.route("/api/admin/upload", methods=["POST"])
 def upload_file():
     if 'files' not in request.files:
         return jsonify({"error": "No file part"}), 400
-    
+
     files = request.files.getlist('files')
-    
+
     if not files or files[0].filename == '':
         return jsonify({"error": "No selected file"}), 400
 
     processed_count = 0
     errors = []
+    uploaded_files = []
 
     for file in files:
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
-            
+
             try:
                 # Process the file based on extension
                 ext = filename.rsplit('.', 1)[1].lower()
-                
+
                 if ext == 'pdf':
                     # Process PDF immediately
                     with fitz.open(filepath) as doc:
                         text = "".join(page.get_text() for page in doc)
-                    
+
                     chunks = chunk_text(text)
                     if chunks:
-                        base_id = filename.replace(" ", "_").replace(".pdf", "")
+                        # Add timestamp to ensure unique IDs even for duplicate filenames
+                        from datetime import datetime
+                        upload_date = datetime.now().isoformat()
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:17]  # Include microseconds
+
+                        base_id = f"admin_{timestamp}_{filename.replace(' ', '_').replace('.pdf', '')}"
                         ids = [f"{base_id}_chunk{i}" for i in range(len(chunks))]
-                        
+
                         collection.add(
                             ids=ids,
                             documents=chunks,
-                            metadatas=[{"source": filename, "type": "pdf", "rev": "manual_upload"}] * len(chunks)
+                            metadatas=[{
+                                "source": filename,
+                                "type": "pdf",
+                                "upload_type": "admin_upload",
+                                "upload_date": upload_date,
+                                "file_size": os.path.getsize(filepath)
+                            }] * len(chunks)
                         )
                         processed_count += 1
+                        uploaded_files.append({
+                            "name": filename,
+                            "size": os.path.getsize(filepath),
+                            "chunks": len(chunks),
+                            "date": upload_date
+                        })
+                        print(f"✅ Uploaded and indexed {filename} ({len(chunks)} chunks)")
                     else:
                         errors.append(f"No text extracted from {filename}")
-                        
+
                 elif ext in ['jpg', 'jpeg']:
-                    # Placeholder for JPEG processing
-                    # TODO: Implement OCR or image embedding
-                    print(f"Received image: {filename}. Stored but not yet processed.")
-                    # For now, we just acknowledge receipt
+                    # Placeholder for JPEG processing - store with admin_upload tag
+                    from datetime import datetime
+                    upload_date = datetime.now().isoformat()
+
+                    # For now, just store metadata without processing
+                    # TODO: Implement OCR with Tesseract or Google Vision API
+                    print(f"Received image: {filename}. Stored but OCR not yet implemented.")
                     processed_count += 1
-                    
+                    uploaded_files.append({
+                        "name": filename,
+                        "size": os.path.getsize(filepath),
+                        "chunks": 0,
+                        "date": upload_date,
+                        "note": "Image stored, OCR processing pending"
+                    })
+
             except Exception as e:
                 print(f"Error processing {filename}: {e}")
+                import traceback
+                traceback.print_exc()
                 errors.append(f"Failed to process {filename}: {str(e)}")
         else:
             errors.append(f"Skipped {file.filename}: Invalid file type")
 
     if processed_count > 0:
         return jsonify({
-            "message": f"Successfully processed {processed_count} files",
+            "message": f"Successfully processed {processed_count} file(s)",
+            "files": uploaded_files,
             "errors": errors
         })
     else:
         return jsonify({"error": "Failed to process files", "details": errors}), 500
 
+
+@app.route("/api/admin/files", methods=["GET"])
+def get_admin_files():
+    """Get all admin-uploaded files from ChromaDB."""
+    try:
+        # Query ChromaDB for documents with upload_type = "admin_upload"
+        results = collection.get(
+            where={"upload_type": "admin_upload"},
+            include=["metadatas"]
+        )
+
+        # Group by filename to avoid duplicates (since we have chunks)
+        files_dict = {}
+        for metadata in results["metadatas"]:
+            filename = metadata.get("source")
+            if filename and filename not in files_dict:
+                # Convert bytes to MB
+                file_size_bytes = metadata.get("file_size", 0)
+                file_size_mb = round(file_size_bytes / (1024 * 1024), 2) if file_size_bytes else 0
+
+                files_dict[filename] = {
+                    "name": filename,
+                    "size": f"{file_size_mb} MB",
+                    "type": metadata.get("type", "unknown").upper(),
+                    "date": metadata.get("upload_date", "Unknown")[:10]  # Just date part
+                }
+
+        # Convert to list
+        files_list = list(files_dict.values())
+
+        return jsonify({
+            "files": files_list,
+            "count": len(files_list)
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/delete", methods=["POST"])
+def delete_file():
+    """Delete an admin-uploaded file from ChromaDB."""
+    try:
+        data = request.json
+        if not data or "filename" not in data:
+            return jsonify({"error": "No filename provided"}), 400
+
+        filename = data["filename"]
+        confirm_filename = data.get("confirmFilename", "")
+
+        # Verify filenames match
+        if filename != confirm_filename:
+            return jsonify({"error": "Filenames do not match"}), 400
+
+        # Query for all chunks of this file with upload_type = "admin_upload"
+        results = collection.get(
+            where={
+                "$and": [
+                    {"source": filename},
+                    {"upload_type": "admin_upload"}
+                ]
+            },
+            include=["metadatas"]
+        )
+
+        if not results["ids"]:
+            return jsonify({"error": f"File '{filename}' not found in admin uploads"}), 404
+
+        chunk_count = len(results["ids"])
+
+        # Delete all chunks
+        collection.delete(ids=results["ids"])
+
+        # Also delete the physical file if it exists
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"🗑️ Deleted physical file: {filepath}")
+
+        print(f"✅ Deleted {chunk_count} chunks for file: {filename}")
+
+        return jsonify({
+            "message": f"Successfully deleted '{filename}' ({chunk_count} chunks)",
+            "chunks_deleted": chunk_count
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/sponsors/<sponsor_name>", methods=["GET"])
 def get_sponsor_details(sponsor_name):
@@ -726,6 +848,302 @@ def reset_db():
         return jsonify({"message": "Database reset and re-indexing started"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/verify-email", methods=["POST"])
+def verify_email():
+    """Verify if an email is whitelisted for admin access."""
+    try:
+        data = request.json
+        email = data.get("email", "").strip().lower()
+
+        if not email:
+            return jsonify({"error": "Email is required", "authorized": False}), 400
+
+        # Get ADMIN list from environment variable
+        admin_str = os.getenv("ADMIN_LIST", "")
+        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
+
+        # Check if email is in admin list
+        is_authorized = email in admin_emails
+
+        print(f"🔍 Admin access attempt: {email} - {'✅ Authorized' if is_authorized else '❌ Denied'}")
+
+        if is_authorized:
+            return jsonify({"authorized": True, "message": "Access granted"})
+        else:
+            return jsonify({"authorized": False, "message": "Access denied"}), 403
+
+    except Exception as e:
+        print(f"❌ ERROR in verify_email: {e}")
+        return jsonify({"error": str(e), "authorized": False}), 500
+
+@app.route("/api/chatbot/verify-email", methods=["POST"])
+def verify_chatbot_email():
+    """Verify if an email is whitelisted for chatbot access (uses USER_WHITELIST)."""
+    try:
+        data = request.json
+        email = data.get("email", "").strip().lower()
+
+        if not email:
+            return jsonify({"error": "Email is required", "authorized": False}), 400
+
+        # Get USER whitelist from environment variable
+        user_whitelist_str = os.getenv("USER_WHITELIST", "")
+        whitelisted_emails = [e.strip().lower() for e in user_whitelist_str.split(",") if e.strip()]
+
+        # Also get admin list - admins can access chatbot too
+        admin_str = os.getenv("ADMIN_LIST", "")
+        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
+
+        # Check if email is in either list
+        is_authorized = email in whitelisted_emails or email in admin_emails
+
+        print(f"🔍 Chatbot access attempt: {email} - {'✅ Authorized' if is_authorized else '❌ Denied'}")
+
+        if is_authorized:
+            return jsonify({"authorized": True, "message": "Access granted"})
+        else:
+            return jsonify({"authorized": False, "message": "Access denied"}), 403
+
+    except Exception as e:
+        print(f"❌ ERROR in verify_chatbot_email: {e}")
+        return jsonify({"error": str(e), "authorized": False}), 500
+
+@app.route("/api/admin/whitelist", methods=["GET"])
+def get_whitelist():
+    """Get the current user email whitelist."""
+    try:
+        whitelist_str = os.getenv("USER_WHITELIST", "")
+        whitelisted_emails = [e.strip() for e in whitelist_str.split(",") if e.strip()]
+
+        return jsonify({
+            "emails": whitelisted_emails,
+            "count": len(whitelisted_emails)
+        })
+    except Exception as e:
+        print(f"❌ ERROR in get_whitelist: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/whitelist/add", methods=["POST"])
+def add_to_whitelist():
+    """Add an email to the user whitelist (updates .env file)."""
+    try:
+        data = request.json
+        new_email = data.get("email", "").strip().lower()
+
+        if not new_email:
+            return jsonify({"error": "Email is required"}), 400
+
+        # Basic email validation
+        import re
+        email_regex = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+        if not re.match(email_regex, new_email):
+            return jsonify({"error": "Invalid email format"}), 400
+
+        # Get current whitelist
+        whitelist_str = os.getenv("USER_WHITELIST", "")
+        whitelisted_emails = [e.strip().lower() for e in whitelist_str.split(",") if e.strip()]
+
+        # Check if already exists
+        if new_email in whitelisted_emails:
+            return jsonify({"error": "Email already in whitelist"}), 400
+
+        # Add new email
+        whitelisted_emails.append(new_email)
+        new_whitelist_str = ",".join(whitelisted_emails)
+
+        # Update .env file
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        update_env_file(env_path, "USER_WHITELIST", new_whitelist_str)
+
+        # Update environment variable for current process
+        os.environ["USER_WHITELIST"] = new_whitelist_str
+
+        print(f"✅ Added {new_email} to user whitelist")
+
+        return jsonify({
+            "message": f"Successfully added {new_email} to user whitelist",
+            "emails": whitelisted_emails
+        })
+    except Exception as e:
+        print(f"❌ ERROR in add_to_whitelist: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/whitelist/remove", methods=["POST"])
+def remove_from_whitelist():
+    """Remove an email from the user whitelist (updates .env file)."""
+    try:
+        data = request.json
+        email_to_remove = data.get("email", "").strip().lower()
+
+        if not email_to_remove:
+            return jsonify({"error": "Email is required"}), 400
+
+        # Get current whitelist
+        whitelist_str = os.getenv("USER_WHITELIST", "")
+        whitelisted_emails = [e.strip().lower() for e in whitelist_str.split(",") if e.strip()]
+
+        # Check if exists
+        if email_to_remove not in whitelisted_emails:
+            return jsonify({"error": "Email not found in whitelist"}), 404
+
+        # Remove email
+        whitelisted_emails.remove(email_to_remove)
+        new_whitelist_str = ",".join(whitelisted_emails)
+
+        # Update .env file
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        update_env_file(env_path, "USER_WHITELIST", new_whitelist_str)
+
+        # Update environment variable for current process
+        os.environ["USER_WHITELIST"] = new_whitelist_str
+
+        print(f"✅ Removed {email_to_remove} from user whitelist")
+
+        return jsonify({
+            "message": f"Successfully removed {email_to_remove} from user whitelist",
+            "emails": whitelisted_emails
+        })
+    except Exception as e:
+        print(f"❌ ERROR in remove_from_whitelist: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/adminlist", methods=["GET"])
+def get_adminlist():
+    """Get the current admin list."""
+    try:
+        admin_str = os.getenv("ADMIN_LIST", "")
+        admin_emails = [e.strip() for e in admin_str.split(",") if e.strip()]
+
+        return jsonify({
+            "emails": admin_emails,
+            "count": len(admin_emails)
+        })
+    except Exception as e:
+        print(f"❌ ERROR in get_adminlist: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/adminlist/add", methods=["POST"])
+def add_to_adminlist():
+    """Add an email to the admin list (updates .env file)."""
+    try:
+        data = request.json
+        new_email = data.get("email", "").strip().lower()
+
+        if not new_email:
+            return jsonify({"error": "Email is required"}), 400
+
+        # Basic email validation
+        import re
+        email_regex = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+        if not re.match(email_regex, new_email):
+            return jsonify({"error": "Invalid email format"}), 400
+
+        # Get current admin list
+        admin_str = os.getenv("ADMIN_LIST", "")
+        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
+
+        # Check if already exists
+        if new_email in admin_emails:
+            return jsonify({"error": "Email already in admin list"}), 400
+
+        # Add new email
+        admin_emails.append(new_email)
+        new_admin_str = ",".join(admin_emails)
+
+        # Update .env file
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        update_env_file(env_path, "ADMIN_LIST", new_admin_str)
+
+        # Update environment variable for current process
+        os.environ["ADMIN_LIST"] = new_admin_str
+
+        print(f"✅ Added {new_email} to admin list")
+
+        return jsonify({
+            "message": f"Successfully added {new_email} to admin list",
+            "emails": admin_emails
+        })
+    except Exception as e:
+        print(f"❌ ERROR in add_to_adminlist: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/adminlist/remove", methods=["POST"])
+def remove_from_adminlist():
+    """Remove an email from the admin list (updates .env file)."""
+    try:
+        data = request.json
+        email_to_remove = data.get("email", "").strip().lower()
+
+        if not email_to_remove:
+            return jsonify({"error": "Email is required"}), 400
+
+        # Get current admin list
+        admin_str = os.getenv("ADMIN_LIST", "")
+        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
+
+        # Check if exists
+        if email_to_remove not in admin_emails:
+            return jsonify({"error": "Email not found in admin list"}), 404
+
+        # Remove email
+        admin_emails.remove(email_to_remove)
+        new_admin_str = ",".join(admin_emails)
+
+        # Update .env file
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        update_env_file(env_path, "ADMIN_LIST", new_admin_str)
+
+        # Update environment variable for current process
+        os.environ["ADMIN_LIST"] = new_admin_str
+
+        print(f"✅ Removed {email_to_remove} from admin list")
+
+        return jsonify({
+            "message": f"Successfully removed {email_to_remove} from admin list",
+            "emails": admin_emails
+        })
+    except Exception as e:
+        print(f"❌ ERROR in remove_from_adminlist: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+def update_env_file(env_path, key, value):
+    """Update or add a key-value pair in the .env file."""
+    # Read existing .env file
+    lines = []
+    key_found = False
+
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            lines = f.readlines()
+
+    # Update or add the key
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            new_lines.append(f"{key}={value}\n")
+            key_found = True
+        else:
+            new_lines.append(line)
+
+    # If key wasn't found, add it
+    if not key_found:
+        new_lines.append(f"{key}={value}\n")
+
+    # Write back to .env file
+    with open(env_path, 'w') as f:
+        f.writelines(new_lines)
+
+    print(f"📝 Updated .env file: {key}={value}")
+
 # =========================================
 # 10. Serve Frontend (Catch-All)
 # =========================================
