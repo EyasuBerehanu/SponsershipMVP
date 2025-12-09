@@ -1,0 +1,180 @@
+/* Chatbot Login Container */
+.chatbot-login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a4d2e 0%, #4d7c0f 100%);
+  padding: 2rem;
+}
+
+/* Login Card */
+.chatbot-login-card {
+  background: white;
+  border-radius: 20px;
+  padding: 3rem 2.5rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  animation: slideUp 0.4s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Login Icon */
+.login-icon {
+  font-size: 4rem;
+  margin-bottom: 1.5rem;
+  animation: bounce 2s ease infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Login Title */
+.chatbot-login-card h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 1rem 0;
+}
+
+/* Login Description */
+.login-description {
+  font-size: 1rem;
+  color: #64748b;
+  margin: 0 0 2.5rem 0;
+  line-height: 1.6;
+}
+
+/* Google Login Wrapper */
+.google-login-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+/* Loading State */
+.loading-state {
+  padding: 2rem 0;
+  text-align: center;
+}
+
+/* Error Message Box */
+.error-message-box {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  color: #991b1b;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  text-align: left;
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 1.5rem 0;
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+.divider span {
+  padding: 0 1rem;
+}
+
+/* Bypass Button */
+.bypass-btn {
+  width: 100%;
+  padding: 0.875rem 1.5rem;
+  background: linear-gradient(135deg, #1a4d2e 0%, #4d7c0f 100%);
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(26, 77, 46, 0.3);
+}
+
+.bypass-btn:hover {
+  background: linear-gradient(135deg, #153d24 0%, #3d6209 100%);
+  box-shadow: 0 4px 12px rgba(26, 77, 46, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Bypass Info */
+.bypass-info {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* Login Footer */
+.login-footer {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.login-footer p {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin: 0.5rem 0;
+}
+
+.login-footer p:first-child {
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* Spinner Animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .chatbot-login-card {
+    padding: 2rem 1.5rem;
+  }
+
+  .chatbot-login-card h2 {
+    font-size: 1.75rem;
+  }
+
+  .login-icon {
+    font-size: 3rem;
+  }
+}
