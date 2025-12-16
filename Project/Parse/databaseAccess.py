@@ -143,8 +143,29 @@ except:
     image_collection = None
     print("⚠️  No image collection found - only PDFs will be searched")
 
+
 # =========================================
-# 4. Flask Setup
+# 4. Warmup ChromaDB
+# =========================================
+
+def warmup_chromadb():
+    """Pre-download embedding model to avoid timeout on first query"""
+    try:
+        print("🔥 Warming up ChromaDB embedding model...")
+        # This will trigger model download if not cached
+        collection.query(
+            query_texts=["warmup query"],
+            n_results=1
+        )
+        print("✅ ChromaDB model ready!")
+    except Exception as e:
+        print(f"⚠️ Warmup failed (will retry on first query): {e}")
+
+# Call it after collection is created
+if SKIP_DROPBOX_INDEXING:
+    warmup_chromadb()
+# =========================================
+# 5. Flask Setup
 # =========================================
 # Point to the React build folder (absolute path for Render compatibility)
 BUILD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'Webapp', 'frontend', 'build')
@@ -192,7 +213,7 @@ query_classifier = QueryClassifier()
 linkedin_service = LinkedInService(provider="rapidapi")
 
 # =========================================
-# 10. Start Indexing in Background
+# 6. Start Indexing in Background
 # =========================================
 if not SKIP_DROPBOX_INDEXING:
     threading.Thread(target=index_pdfs_if_new, args=(collection, processing_status)).start()
@@ -203,7 +224,7 @@ else:
 # are now imported from dropbox_indexer.py
 
 # =========================================
-# 5. Helper Functions for Sponsor Detection
+# 7. Helper Functions for Sponsor Detection
 # =========================================
 def extract_sponsor_mentions(query: str) -> list:
     """
@@ -233,7 +254,7 @@ def extract_sponsor_mentions(query: str) -> list:
     return potential_sponsors
 
 # =========================================
-# 6. Query ChromaDB and Chat via OpenRouter
+# 8. Query ChromaDB and Chat
 # =========================================
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -330,7 +351,7 @@ def chat():
                 print(f"⚠️  Error querying image collection: {img_err}")
 
         # =========================================
-        # 6. Web Search (Fallback/Augmentation)
+        # Web Search (Fallback/Augmentation)
         # =========================================
         web_results = []
         # Perform search if:
