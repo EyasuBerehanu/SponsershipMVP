@@ -867,18 +867,16 @@ def reset_db():
 def verify_email():
     """Verify if an email is whitelisted for admin access."""
     try:
+        from user_db import is_admin
+
         data = request.json
         email = data.get("email", "").strip().lower()
 
         if not email:
             return jsonify({"error": "Email is required", "authorized": False}), 400
 
-        # Get ADMIN list from environment variable
-        admin_str = os.getenv("ADMIN_LIST", "")
-        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
-
-        # Check if email is in admin list
-        is_authorized = email in admin_emails
+        # Check if email is in admin list (from SQLite)
+        is_authorized = is_admin(email)
 
         print(f"🔍 Admin access attempt: {email} - {'✅ Authorized' if is_authorized else '❌ Denied'}")
 
@@ -895,22 +893,16 @@ def verify_email():
 def verify_chatbot_email():
     """Verify if an email is whitelisted for chatbot access (uses USER_WHITELIST)."""
     try:
+        from user_db import is_authorized_for_chatbot
+
         data = request.json
         email = data.get("email", "").strip().lower()
 
         if not email:
             return jsonify({"error": "Email is required", "authorized": False}), 400
 
-        # Get USER whitelist from environment variable
-        user_whitelist_str = os.getenv("USER_WHITELIST", "")
-        whitelisted_emails = [e.strip().lower() for e in user_whitelist_str.split(",") if e.strip()]
-
-        # Also get admin list - admins can access chatbot too
-        admin_str = os.getenv("ADMIN_LIST", "")
-        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
-
-        # Check if email is in either list
-        is_authorized = email in whitelisted_emails or email in admin_emails
+        # Check if email is authorized (admin OR whitelisted user) from SQLite
+        is_authorized = is_authorized_for_chatbot(email)
 
         print(f"🔍 Chatbot access attempt: {email} - {'✅ Authorized' if is_authorized else '❌ Denied'}")
 
@@ -927,8 +919,9 @@ def verify_chatbot_email():
 def get_whitelist():
     """Get the current user email whitelist."""
     try:
-        whitelist_str = os.getenv("USER_WHITELIST", "")
-        whitelisted_emails = [e.strip() for e in whitelist_str.split(",") if e.strip()]
+        from user_db import get_all_whitelisted_users
+
+        whitelisted_emails = get_all_whitelisted_users()
 
         return jsonify({
             "emails": whitelisted_emails,
@@ -940,8 +933,10 @@ def get_whitelist():
 
 @app.route("/api/admin/whitelist/add", methods=["POST"])
 def add_to_whitelist():
-    """Add an email to the user whitelist (updates .env file)."""
+    """Add an email to the user whitelist (updates SQLite database)."""
     try:
+        from user_db import add_whitelisted_user, get_all_whitelisted_users
+
         data = request.json
         new_email = data.get("email", "").strip().lower()
 
@@ -954,26 +949,16 @@ def add_to_whitelist():
         if not re.match(email_regex, new_email):
             return jsonify({"error": "Invalid email format"}), 400
 
-        # Get current whitelist
-        whitelist_str = os.getenv("USER_WHITELIST", "")
-        whitelisted_emails = [e.strip().lower() for e in whitelist_str.split(",") if e.strip()]
+        # Add to database
+        success = add_whitelisted_user(new_email, added_by='admin_dashboard')
 
-        # Check if already exists
-        if new_email in whitelisted_emails:
+        if not success:
             return jsonify({"error": "Email already in whitelist"}), 400
 
-        # Add new email
-        whitelisted_emails.append(new_email)
-        new_whitelist_str = ",".join(whitelisted_emails)
-
-        # Update .env file
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        update_env_file(env_path, "USER_WHITELIST", new_whitelist_str)
-
-        # Update environment variable for current process
-        os.environ["USER_WHITELIST"] = new_whitelist_str
-
         print(f"✅ Added {new_email} to user whitelist")
+
+        # Get updated list
+        whitelisted_emails = get_all_whitelisted_users()
 
         return jsonify({
             "message": f"Successfully added {new_email} to user whitelist",
@@ -987,34 +972,26 @@ def add_to_whitelist():
 
 @app.route("/api/admin/whitelist/remove", methods=["POST"])
 def remove_from_whitelist():
-    """Remove an email from the user whitelist (updates .env file)."""
+    """Remove an email from the user whitelist (updates SQLite database)."""
     try:
+        from user_db import remove_whitelisted_user, get_all_whitelisted_users
+
         data = request.json
         email_to_remove = data.get("email", "").strip().lower()
 
         if not email_to_remove:
             return jsonify({"error": "Email is required"}), 400
 
-        # Get current whitelist
-        whitelist_str = os.getenv("USER_WHITELIST", "")
-        whitelisted_emails = [e.strip().lower() for e in whitelist_str.split(",") if e.strip()]
+        # Remove from database
+        success = remove_whitelisted_user(email_to_remove)
 
-        # Check if exists
-        if email_to_remove not in whitelisted_emails:
+        if not success:
             return jsonify({"error": "Email not found in whitelist"}), 404
 
-        # Remove email
-        whitelisted_emails.remove(email_to_remove)
-        new_whitelist_str = ",".join(whitelisted_emails)
-
-        # Update .env file
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        update_env_file(env_path, "USER_WHITELIST", new_whitelist_str)
-
-        # Update environment variable for current process
-        os.environ["USER_WHITELIST"] = new_whitelist_str
-
         print(f"✅ Removed {email_to_remove} from user whitelist")
+
+        # Get updated list
+        whitelisted_emails = get_all_whitelisted_users()
 
         return jsonify({
             "message": f"Successfully removed {email_to_remove} from user whitelist",
@@ -1030,8 +1007,9 @@ def remove_from_whitelist():
 def get_adminlist():
     """Get the current admin list."""
     try:
-        admin_str = os.getenv("ADMIN_LIST", "")
-        admin_emails = [e.strip() for e in admin_str.split(",") if e.strip()]
+        from user_db import get_all_admins
+
+        admin_emails = get_all_admins()
 
         return jsonify({
             "emails": admin_emails,
@@ -1043,8 +1021,10 @@ def get_adminlist():
 
 @app.route("/api/admin/adminlist/add", methods=["POST"])
 def add_to_adminlist():
-    """Add an email to the admin list (updates .env file)."""
+    """Add an email to the admin list (updates SQLite database)."""
     try:
+        from user_db import add_admin, get_all_admins
+
         data = request.json
         new_email = data.get("email", "").strip().lower()
 
@@ -1057,26 +1037,16 @@ def add_to_adminlist():
         if not re.match(email_regex, new_email):
             return jsonify({"error": "Invalid email format"}), 400
 
-        # Get current admin list
-        admin_str = os.getenv("ADMIN_LIST", "")
-        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
+        # Add to database
+        success = add_admin(new_email, added_by='admin_dashboard')
 
-        # Check if already exists
-        if new_email in admin_emails:
+        if not success:
             return jsonify({"error": "Email already in admin list"}), 400
 
-        # Add new email
-        admin_emails.append(new_email)
-        new_admin_str = ",".join(admin_emails)
-
-        # Update .env file
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        update_env_file(env_path, "ADMIN_LIST", new_admin_str)
-
-        # Update environment variable for current process
-        os.environ["ADMIN_LIST"] = new_admin_str
-
         print(f"✅ Added {new_email} to admin list")
+
+        # Get updated list
+        admin_emails = get_all_admins()
 
         return jsonify({
             "message": f"Successfully added {new_email} to admin list",
@@ -1090,34 +1060,26 @@ def add_to_adminlist():
 
 @app.route("/api/admin/adminlist/remove", methods=["POST"])
 def remove_from_adminlist():
-    """Remove an email from the admin list (updates .env file)."""
+    """Remove an email from the admin list (updates SQLite database)."""
     try:
+        from user_db import remove_admin, get_all_admins
+
         data = request.json
         email_to_remove = data.get("email", "").strip().lower()
 
         if not email_to_remove:
             return jsonify({"error": "Email is required"}), 400
 
-        # Get current admin list
-        admin_str = os.getenv("ADMIN_LIST", "")
-        admin_emails = [e.strip().lower() for e in admin_str.split(",") if e.strip()]
+        # Remove from database
+        success = remove_admin(email_to_remove)
 
-        # Check if exists
-        if email_to_remove not in admin_emails:
+        if not success:
             return jsonify({"error": "Email not found in admin list"}), 404
 
-        # Remove email
-        admin_emails.remove(email_to_remove)
-        new_admin_str = ",".join(admin_emails)
-
-        # Update .env file
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        update_env_file(env_path, "ADMIN_LIST", new_admin_str)
-
-        # Update environment variable for current process
-        os.environ["ADMIN_LIST"] = new_admin_str
-
         print(f"✅ Removed {email_to_remove} from admin list")
+
+        # Get updated list
+        admin_emails = get_all_admins()
 
         return jsonify({
             "message": f"Successfully removed {email_to_remove} from admin list",
